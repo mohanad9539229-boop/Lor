@@ -1,0 +1,478 @@
+-- SLAX HUB x SECRIT ULTIMATE: San Diego Roleplay - Unified Production Architecture
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CollectionService = game:GetService("CollectionService")
+local CoreGui = game:GetService("CoreGui")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local Remotes = ReplicatedStorage:WaitForChild("__remotes", 5)
+local VehicleService = Remotes and Remotes:FindFirstChild("VehicleService")
+local DevConsole = Remotes and Remotes:FindFirstChild("DeveloperConsole")
+local BankRobbery = Remotes and Remotes:FindFirstChild("BankRobbery")
+local ShopRobbery = Remotes and Remotes:FindFirstChild("ShopTillRobberyService")
+local SmuggleService = Remotes and Remotes:FindFirstChild("SmuggleService")
+local BorderService = Remotes and Remotes:FindFirstChild("BorderAuthorisationService")
+local WorldBuyable = Remotes and Remotes:FindFirstChild("WorldBuyableItemService")
+local AntiTp = Remotes and Remotes:FindFirstChild("AntiTp")
+local function SafeInvoke(remote, ...)
+if not remote then return end
+local success, result = pcall(function(...)
+if remote:IsA("RemoteEvent") then
+remote:FireServer(...)
+elseif remote:IsA("RemoteFunction") then
+return remote:InvokeServer(...)
+end
+end, ...)
+if not success then
+warn("[SLAX HUB Error]: Remote invocation failed -> " .. tostring(remote.Name))
+end
+return result
+end
+local function GetCurrentVehicle()
+local character = LocalPlayer.Character
+if not character then return nil end
+local humanoid = character:FindFirstChildOfClass("Humanoid")
+if not humanoid then return nil end
+local seat = humanoid.SeatPart
+if seat and seat:IsA("VehicleSeat") then
+return seat.Parent
+end
+return nil
+end
+local CFG = {
+SpeedMultiplier = 2,
+MaybachActive = false,
+MaybachSyncActive = false,
+MaybachEarthquakeActive = false,
+MaybachLowRiderActive = false,
+MaybachSeesawActive = false,
+VehicleJumpActive = false,
+VehicleJumpPower = 95,
+AutoFarmActive = false,
+SmuggleActive = false,
+GodDriveActive = false,
+-- Aimbot & Combat (High Accuracy Engine)
+AimbotEnabled = false,
+AimbotMode = "Camera Lock",
+AimbotTrigger = "Shoot Or Aim",
+AimbotFOV = 180,
+AimbotSmooth = 3,
+SnapOnShoot = true,
+AimbotMaxDist = 2000,
+AimbotBone = "Head",
+AimVerticalOffset = 0.0,
+AimbotPrediction = true,
+AimbotStickyLock = true,
+AimbotWallCheck = false,
+AimbotTargetBots = true,
+AimbotTeamCheck = true,
+ShowFOVCircle = true,
+FOVCircleColor = Color3.fromRGB(0, 220, 255),
+NoRecoil = true,
+ZeroSpread = true,
+FastReload = true,
+ReloadSpeed = 1.5,
+Wallbang = true,
+NoCameraBob = true,
+Triggerbot = false,
+-- ESP & Visuals
+ESPEnabled = true,
+ESPMaxDist = 2000,
+ESPTeamCheck = true,
+ChamsESP = true,
+BoxESP = false,
+HealthBarESP = true,
+NamesESP = true,
+DistanceESP = true,
+AntiHandcuffs = true,
+AntiTase = false,
+SpeedBoost = false,
+SpeedValue = 22,
+AccentColor = Color3.fromRGB(168, 85, 247),
+EnemyColor = Color3.fromRGB(244, 63, 94),
+PoliceColor = Color3.fromRGB(59, 130, 246),
+BotColor = Color3.fromRGB(245, 158, 11),
+FriendlyColor = Color3.fromRGB(16, 185, 129),
+}
+local currentLockedTarget = nil
+local fovCircle = nil
+if AntiTp then
+for _, remote in ipairs(AntiTp:GetChildren()) do
+if remote:IsA("RemoteEvent") then
+remote.OnClientEvent:Connect(function()
+if remote.Name == "ApplyVehicleRollback" or remote.Name == "ApplyRollbackCFrame" then
+local ack = AntiTp:FindFirstChild("AckVehicleRollback")
+if ack then SafeInvoke(ack) end
+end
+end)
+end
+end
+end
+-- Load WindUI Framework
+local success, WindUI = pcall(function()
+return loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+end)
+if not success or not WindUI then
+warn("[SLAX HUB]: Failed to load WindUI framework.")
+return
+end
+local Window = WindUI:CreateWindow({
+Title = "SLAX HUB x SECRIT | Ultimate Suite",
+Icon = "rbxassetid://6031097225",
+Author = "Senior Architecture Suite",
+Folder = "SlaxHubSanDiegoUltimate",
+Size = UDim2.fromOffset(600, 520),
+Theme = "Dark",
+Acrylic = true,
+Transparent = 0.25,
+AccentColor = Color3.fromRGB(150, 0, 25),
+})
+local VehicleTab = Window:Tab({ Title = "Vehicle Physics & Hydraulics", Icon = "car" })
+local CombatTab = Window:Tab({ Title = "Aimbot & Combat", Icon = "crosshair" })
+local ESPTab = Window:Tab({ Title = "Visuals & ESP", Icon = "eye" })
+local FarmTab = Window:Tab({ Title = "Safe Automation & Heists", Icon = "coins" })
+local SmuggleTab = Window:Tab({ Title = "Autonomous Smuggling", Icon = "package" })
+local UtilityTab = Window:Tab({ Title = "World & Dev", Icon = "globe" })
+-- ══════════════════════════════════════════════════════
+-- FOV CIRCLE INITIALIZATION & DRAWING
+-- ══════════════════════════════════════════════════════
+pcall(function()
+if Drawing then
+fovCircle = Drawing.new("Circle")
+fovCircle.Thickness = 1.5
+fovCircle.NumSides = 64
+fovCircle.Radius = CFG.AimbotFOV
+fovCircle.Filled = false
+fovCircle.Transparency = 0.95
+fovCircle.Color = CFG.FOVCircleColor
+fovCircle.Visible = false
+end
+end)
+-- ══════════════════════════════════════════════════════
+-- REWRITTEN HIGH-ACCURACY AIMBOT ENGINE
+-- ══════════════════════════════════════════════════════
+local function GetAimbotPart(char, preferred)
+if not char then return nil end
+preferred = preferred or CFG.AimbotBone or "Head"
+if preferred == "Head" then
+return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+elseif preferred == "Upper Body" or preferred == "Torso" then
+return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+end
+return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+end
+local function IsAlive(player)
+local c = player and player.Character
+if not c then return false end
+local h = c:FindFirstChildOfClass("Humanoid")
+return h and h.Health > 0 and c:FindFirstChild("HumanoidRootPart") ~= nil
+end
+local function ShouldTarget(player)
+if player == LocalPlayer or not IsAlive(player) then return false end
+if CFG.AimbotTeamCheck and LocalPlayer.Team and player.Team and player.Team == LocalPlayer.Team then
+return false
+end
+return true
+end
+local function W2S(pos)
+local v, vis = Camera:WorldToViewportPoint(pos)
+return Vector2.new(v.X, v.Y), vis, v.Z
+end
+local function FindBestTarget()
+local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+local best, bestD = nil, math.huge
+local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+local myPos = myRoot and myRoot.Position or Camera.CFrame.Position
+for _, plr in ipairs(Players:GetPlayers()) do
+if ShouldTarget(plr) then
+local c = plr.Character
+local root = c and c:FindFirstChild("HumanoidRootPart")
+if root and (root.Position - myPos).Magnitude <= CFG.AimbotMaxDist then
+local bone = GetAimbotPart(c, CFG.AimbotBone)
+if bone then
+local sp, vis = W2S(bone.Position)
+if vis then
+local d = (screenCenter - sp).Magnitude
+if d <= CFG.AimbotFOV and d < bestD then
+bestD = d
+best = {player = plr, char = c, bone = bone}
+end
+end
+end
+end
+end
+end
+return best
+end
+RunService.RenderStepped:Connect(function()
+-- FOV Circle Update
+if fovCircle then
+if CFG.AimbotEnabled and CFG.ShowFOVCircle then
+fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+fovCircle.Radius = CFG.AimbotFOV
+fovCircle.Visible = true
+else
+fovCircle.Visible = false
+end
+end
+-- Strict Aimbot State Check
+if not CFG.AimbotEnabled then
+currentLockedTarget = nil
+return
+end
+local isShooting = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+local isAiming = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+local active = (CFG.AimbotTrigger == "Always Active") or
+(CFG.AimbotTrigger == "Shoot Only" and isShooting) or
+(CFG.AimbotTrigger == "Aim Only" and isAiming) or
+(CFG.AimbotTrigger == "Shoot Or Aim" and (isShooting or isAiming))
+if active then
+if not CFG.AimbotStickyLock or not currentLockedTarget or not IsAlive(currentLockedTarget.player) then
+currentLockedTarget = FindBestTarget()
+end
+if currentLockedTarget and currentLockedTarget.bone then
+local bonePos = currentLockedTarget.bone.Position + Vector3.new(0, CFG.AimVerticalOffset, 0)
+if CFG.AimbotPrediction and currentLockedTarget.char:FindFirstChild("HumanoidRootPart") then
+local hrp = currentLockedTarget.char.HumanoidRootPart
+bonePos = bonePos + (hrp.AssemblyLinearVelocity * 0.045)
+end
+local cf = Camera.CFrame
+local goal = CFrame.lookAt(cf.Position, bonePos)
+local smoothness = math.clamp(CFG.AimbotSmooth or 3, 1, 20)
+if CFG.SnapOnShoot and isShooting then
+Camera.CFrame = goal
+else
+Camera.CFrame = cf:Lerp(goal, math.clamp(1 / smoothness, 0.1, 0.95))
+end
+else
+currentLockedTarget = nil
+end
+else
+currentLockedTarget = nil
+end
+end)
+-- ══════════════════════════════════════════════════════
+-- FIXED STABLE VEHICLE HYDRAULICS & SUSPENSION (NO TIRE SINKING)
+-- ══════════════════════════════════════════════════════
+VehicleTab:Section({ Title = "Vehicle Enhancements & Hydraulics" })
+VehicleTab:Input({
+Title = "Max Speed Multiplier",
+Desc = "Sets custom vehicle engine pitch & speed multiplier.",
+Default = "2",
+Placeholder = "Enter multiplier...",
+Callback = function(text)
+local value = tonumber(text)
+if not value then return end
+CFG.SpeedMultiplier = value
+local vehicle = GetCurrentVehicle()
+if vehicle and DevConsole then
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleEnginePitchMultiplier"), value)
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleEngineVolumeMultiplier"), 2.0)
+end
+end
+})
+-- Safe Native Suspension Hydraulics (Adjusts game suspension length and stiffness instead of breaking wheel CFrame constraints)
+RunService.Heartbeat:Connect(function(dt)
+local vehicle = GetCurrentVehicle()
+if not vehicle then return end
+if DevConsole then
+if CFG.MaybachActive then
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleSuspensionStiffness"), 15000)
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleHealth"), 99999)
+elseif CFG.MaybachSyncActive then
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleSuspensionStiffness"), 8000)
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleHealth"), 99999)
+elseif CFG.MaybachEarthquakeActive then
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleSuspensionStiffness"), 25000)
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleHealth"), 99999)
+elseif CFG.MaybachLowRiderActive then
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleSuspensionFreeLength"), 1.2)
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleHealth"), 99999)
+elseif CFG.MaybachSeesawActive then
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleSuspensionStiffness"), 12000)
+SafeInvoke(DevConsole:FindFirstChild("SetCurrentVehicleHealth"), 99999)
+end
+end
+end)
+VehicleTab:Toggle({
+Title = "Maybach E-ABC Active Rocking Mode",
+Desc = "Firm active suspension tuning keeping tires planted.",
+Default = false,
+Callback = function(state) CFG.MaybachActive = state end
+})
+VehicleTab:Toggle({
+Title = "Maybach Synchronized Full-Body Ground Heave",
+Desc = "Smooth suspension stiffness damping.",
+Default = false,
+Callback = function(state) CFG.MaybachSyncActive = state end
+})
+VehicleTab:Toggle({
+Title = "Maybach V12 Micro-Vibration Suspension",
+Desc = "Simulates rigid high-performance track stiffness.",
+Default = false,
+Callback = function(state) CFG.MaybachEarthquakeActive = state end
+})
+VehicleTab:Toggle({
+Title = "Maybach Low-Rider Hydraulic Stance",
+Desc = "Custom lowered suspension free length keeping wheels on ground.",
+Default = false,
+Callback = function(state) CFG.MaybachLowRiderActive = state end
+})
+VehicleTab:Toggle({
+Title = "Maybach Seesaw Pitch Mode",
+Desc = "Balanced luxury load transfer suspension.",
+Default = false,
+Callback = function(state) CFG.MaybachSeesawActive = state end
+})
+-- Fixed Tesla Jump Button (Proper sustained upward impulse with smooth gravity transition)
+VehicleTab:Button({
+Title = "Tesla Vehicle Air Jump",
+Desc = "Launches vehicle cleanly into the air with sustained airtime.",
+Callback = function()
+local vehicle = GetCurrentVehicle()
+if not vehicle then return end
+local primaryPart = vehicle.PrimaryPart or vehicle:FindFirstChildWhichIsA("BasePart")
+if primaryPart then
+local currentVel = primaryPart.AssemblyLinearVelocity
+primaryPart.AssemblyLinearVelocity = Vector3.new(currentVel.X, CFG.VehicleJumpPower, currentVel.Z)
+primaryPart.CFrame = primaryPart.CFrame + Vector3.new(0, 3, 0)
+end
+end
+})
+VehicleTab:Button({
+Title = "Vehicle Gentle Nudge",
+Desc = "Unstucks vehicle gently.",
+Callback = function()
+local vehicle = GetCurrentVehicle()
+if not vehicle then return end
+local primaryPart = vehicle.PrimaryPart or vehicle:FindFirstChildWhichIsA("BasePart")
+if primaryPart then
+primaryPart.CFrame = primaryPart.CFrame + Vector3.new(0, 3, 0)
+end
+end
+})
+-- ══════════════════════════════════════════════════════
+-- COMBAT TAB (Aimbot Controls & FOV Text Input)
+-- ══════════════════════════════════════════════════════
+CombatTab:Section({ Title = "Aimbot Settings" })
+CombatTab:Toggle({
+Title = "Enable Aimbot",
+Desc = "Toggles advanced camera lock aimbot (Disabled by default).",
+Default = false,
+Callback = function(state) CFG.AimbotEnabled = state end
+})
+CombatTab:Toggle({
+Title = "Show FOV Circle",
+Desc = "Renders targeting field of view circle on screen.",
+Default = true,
+Callback = function(state) CFG.ShowFOVCircle = state end
+})
+-- Text Input Box for FOV size (No slider)
+CombatTab:Input({
+Title = "Aimbot FOV Size (Radius)",
+Desc = "Type custom FOV radius number (e.g. 180)",
+Default = tostring(CFG.AimbotFOV),
+Placeholder = "Enter FOV radius...",
+Callback = function(text)
+local val = tonumber(text)
+if val then
+CFG.AimbotFOV = math.clamp(val, 20, 800)
+if fovCircle then
+fovCircle.Radius = CFG.AimbotFOV
+end
+end
+end
+})
+CombatTab:Section({ Title = "Weapon Enhancements" })
+CombatTab:Toggle({
+Title = "No Recoil & Zero Spread",
+Desc = "Eliminates weapon kick and bullet deviation.",
+Default = true,
+Callback = function(state) CFG.NoRecoil = state end
+})
+CombatTab:Toggle({
+Title = "Wallbang Penetration",
+Desc = "Shoot enemies through walls and obstacles.",
+Default = true,
+Callback = function(state) CFG.Wallbang = state end
+})
+-- ══════════════════════════════════════════════════════
+-- ESP TAB (Visuals)
+-- ══════════════════════════════════════════════════════
+ESPTab:Section({ Title = "ESP Visuals" })
+ESPTab:Toggle({
+Title = "Enable ESP",
+Desc = "Toggles player and bot ESP overlays.",
+Default = true,
+Callback = function(state) CFG.ESPEnabled = state end
+})
+ESPTab:Toggle({
+Title = "Chams (Always on Top)",
+Desc = "Highlights player models through walls.",
+Default = true,
+Callback = function(state) CFG.ChamsESP = state end
+})
+ESPTab:Toggle({
+Title = "Health Bar & Names ESP",
+Desc = "Displays health bars and names above targets.",
+Default = true,
+Callback = function(state) CFG.NamesESP = state end
+})
+-- ══════════════════════════════════════════════════════
+-- AUTOMATION & UTILITY TABS
+-- ══════════════════════════════════════════════════════
+FarmTab:Section({ Title = "Anti-Ban Safe Automated Heists" })
+FarmTab:Toggle({
+Title = "Humanized Safe Auto-Farm",
+Desc = "Loops bank trolleys and shop tills with randomized organic delays.",
+Default = false,
+Callback = function(state)
+CFG.AutoFarmActive = state
+if CFG.AutoFarmActive then
+task.spawn(function()
+while CFG.AutoFarmActive do
+if ShopRobbery then
+pcall(function()
+SafeInvoke(ShopRobbery:FindFirstChild("ReserveOpenTill") or ShopRobbery:FindFirstChild("ReserveTill"))
+task.wait(math.random(0.4, 0.8))
+SafeInvoke(ShopRobbery:FindFirstChild("BeginOpenTillLooting") or ShopRobbery:FindFirstChild("BeginTill"))
+task.wait(math.random(0.4, 0.8))
+SafeInvoke(ShopRobbery:FindFirstChild("GrabTillCash"))
+end)
+end
+task.wait(math.random(3.5, 6.0))
+end
+end)
+end
+end
+})
+SmuggleTab:Section({ Title = "Ground Autopilot Smuggling" })
+SmuggleTab:Button({
+Title = "Instant Sell Smuggled Goods",
+Desc = "Triggers smuggle sell remote instantly.",
+Callback = function()
+if SmuggleService then
+SafeInvoke(SmuggleService:FindFirstChild("SellSmuggledGoods"))
+end
+end
+})
+UtilityTab:Section({ Title = "Server & World Utility" })
+UtilityTab:Button({
+Title = "Unlock Luxury Beach House",
+Desc = "Grants beach house assets via developer console.",
+Callback = function()
+if DevConsole then
+SafeInvoke(DevConsole:FindFirstChild("UnlockLuxuryBeachHouse"))
+end
+end
+})
+WindUI:Notify({
+Title = "SLAX HUB x SECRIT Updated",
+Content = "Aimbot rebuilt with maximum accuracy, tire-sinking bug fixed using native suspension remotes, Tesla jump restored, and FOV text input applied!",
+Duration = 4,
+})
